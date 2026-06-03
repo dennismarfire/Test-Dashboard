@@ -37,7 +37,7 @@ conn = st.connection("postgresql", type=SQLConnection)
 
 @st.cache_resource
 def init_datenbank():
-    """Legt die Tabelle 'transaktionen' an (laeuft dank Cache nur 1x pro Sitzung)."""
+    """Legt die Tabellen 'transaktionen' und 'einstellungen' an (laeuft dank Cache nur 1x pro Sitzung)."""
     with conn.session as session:
         session.execute(text("""
             CREATE TABLE IF NOT EXISTS transaktionen (
@@ -47,6 +47,12 @@ def init_datenbank():
                 kategorie    TEXT NOT NULL,
                 beschreibung TEXT,
                 zeitstempel  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        session.execute(text("""
+            CREATE TABLE IF NOT EXISTS einstellungen (
+                schluessel TEXT PRIMARY KEY,
+                wert       TEXT NOT NULL
             );
         """))
         session.commit()
@@ -115,6 +121,29 @@ def loesche_transaktion(trans_id):
     with conn.session as session:
         session.execute(text("DELETE FROM transaktionen WHERE id = :id;"),
                         {"id": int(trans_id)})
+        session.commit()
+
+
+def lade_einstellung(schluessel: str, standard: float) -> float:
+    """Liest einen persistenten Einstellungswert aus der DB (kein Cache)."""
+    df = conn.query(
+        "SELECT wert FROM einstellungen WHERE schluessel = :key;",
+        params={"key": schluessel},
+        ttl=0,
+    )
+    if df.empty:
+        return standard
+    return float(df.iloc[0]["wert"])
+
+
+def speichere_einstellung(schluessel: str, wert: float):
+    """Schreibt oder aktualisiert einen Einstellungswert in der DB."""
+    with conn.session as session:
+        session.execute(text("""
+            INSERT INTO einstellungen (schluessel, wert)
+            VALUES (:key, :val)
+            ON CONFLICT (schluessel) DO UPDATE SET wert = :val;
+        """), {"key": schluessel, "val": str(wert)})
         session.commit()
 
 
@@ -553,9 +582,15 @@ if "flash" in st.session_state:
 # ==========================================================
 with st.sidebar:
     st.header("⚙ Konto")
+    startkontostand_gespeichert = lade_einstellung("startkontostand", 1000.0)
     startkontostand = st.number_input(
-        "Startkontostand (€)", min_value=0.0, value=1000.0, step=10.0, format="%.2f"
+        "Startkontostand (€)", min_value=0.0,
+        value=startkontostand_gespeichert, step=10.0, format="%.2f",
     )
+    if st.button("💾 Startkontostand speichern"):
+        speichere_einstellung("startkontostand", startkontostand)
+        setze_flash(f"Startkontostand auf {startkontostand:.2f} € gespeichert!", "success")
+        st.rerun()
     st.caption("Ausgaben werden abgezogen · Gehalt wird addiert.")
     st.divider()
     if st.button("🔄 Daten neu laden"):
