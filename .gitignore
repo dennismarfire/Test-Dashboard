@@ -1,0 +1,16 @@
+# --- Streamlit ---
+# Enthaelt dein Datenbank-Passwort – NIEMALS committen!
+.streamlit/secrets.toml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+
+# --- IDE ---
+.idea/
+.vscode/
