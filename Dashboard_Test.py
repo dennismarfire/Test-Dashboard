@@ -15,10 +15,20 @@ INK     = "#0c241c"
 ACCENT  = "#0b6b4f"
 ACCENT2 = "#0a4f8c"
 EINNAHME_KAT = {"Gehalt","Rückzahlung"}   # Diese Kategorien werden addiert, nicht subtrahiert
-KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Mittagessen","Freizeit","Gehalt", "Rückzahlung"]
+FIXKOSTEN_KAT = {"Investment", "Fixkosten", "Miete"}  # zaehlen als Fixkosten (nicht variable Ausgabe)
+KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Miete", "Mittagessen","Freizeit","Gehalt", "Rückzahlung"]
+# Stark unterscheidbare Palette (warm/kalt abwechselnd, damit Nachbarsegmente klar trennen)
 TORTE_FARBEN = [
-    "#2ecc71", "#3498db", "#9b59b6", "#f39c12", "#e74c3c",
-    "#1abc9c", "#e67e22", "#34495e", "#27ae60", "#2980b9",
+    "#e6194B",  # rot
+    "#4363d8",  # blau
+    "#3cb44b",  # gruen
+    "#f58231",  # orange
+    "#911eb4",  # violett
+    "#42d4f4",  # cyan
+    "#f032e6",  # magenta
+    "#bfef45",  # limette
+    "#469990",  # petrol
+    "#9A6324",  # braun
 ]
 
 # ---- Spalten-Mapping: Datenbank <-> App/Anzeige --------------------------
@@ -478,56 +488,92 @@ def _ax(grid=False, fmt=None, angle=0, tick_count=None):
 
 
 def _torte_farben(n):
-    """Gibt n glässige Farben aus TORTE_FARBEN (zyklisch) zurück."""
+    """Gibt n stark unterscheidbare Farben aus TORTE_FARBEN (zyklisch) zurück."""
     return (TORTE_FARBEN * ((n // len(TORTE_FARBEN)) + 1))[:n]
 
 
-def glas_torte(data, x_feld, y_feld):
-    """Produkt-Tortendiagramm mit glässigen Farben."""
-    n = max(len(data), 1)
-    c = (
-        alt.Chart(data)
-        .mark_arc(innerRadius=45, opacity=0.80, stroke="rgba(255,255,255,0.75)", strokeWidth=2)
-        .encode(
-            theta=alt.Theta(f"{y_feld}:Q", stack=True),
-            color=alt.Color(
-                f"{x_feld}:N",
-                scale=alt.Scale(range=_torte_farben(n)),
-                legend=alt.Legend(title="", labelColor=INK, labelFontSize=11, orient="right"),
-            ),
-            tooltip=[x_feld, alt.Tooltip(f"{y_feld}:Q", format=".2f")],
-        )
-        .properties(height=260, background="transparent")
-    )
-    return c.configure_view(fill=None, stroke=None)
-
-
-def kat_torte(data, selection=None):
-    """Kategorie-Tortendiagramm mit glässigen Farben + optionaler Selektion."""
-    kategorien = list(data["Kategorie"].values)
+def torte(data, kat_feld, wert_feld, selection=None):
+    """Donut-Diagramm: glässig (durchscheinend), ohne Legende,
+       Beschriftung mit Pfeil aussen an den Segmenten."""
+    kategorien = list(data[kat_feld].astype(str).values)
     n = max(len(kategorien), 1)
+    farben = _torte_farben(n)
+
+    # Glassig = durchscheinend, aber Segmente durch weisse Trennlinien klar erkennbar
     opacity_enc = (
-        alt.condition(selection, alt.value(1.0), alt.value(0.40))
-        if selection else alt.value(0.82)
+        alt.condition(selection, alt.value(0.62), alt.value(0.16))
+        if selection else alt.value(0.62)
     )
-    c = (
+
+    base = (
         alt.Chart(data)
-        .mark_arc(innerRadius=55, stroke="rgba(255,255,255,0.75)", strokeWidth=2)
-        .encode(
-            theta=alt.Theta("Preis:Q", stack=True),
-            color=alt.Color(
-                "Kategorie:N",
-                scale=alt.Scale(domain=kategorien, range=_torte_farben(n)),
-                legend=alt.Legend(title="", labelColor=INK, labelFontSize=11, orient="right"),
-            ),
-            opacity=opacity_enc,
-            tooltip=["Kategorie", alt.Tooltip("Preis:Q", format=".2f"), "Typ"],
-        )
-        .properties(height=280, background="transparent")
+        .transform_calculate(_lbl=f'"→ " + datum["{kat_feld}"]')
+        .encode(theta=alt.Theta(f"{wert_feld}:Q", stack=True))
     )
+
+    arc = base.mark_arc(
+        innerRadius=48, outerRadius=100,
+        stroke="rgba(255,255,255,0.92)", strokeWidth=2.5,
+    ).encode(
+        color=alt.Color(
+            f"{kat_feld}:N",
+            scale=alt.Scale(domain=kategorien, range=farben),
+            legend=None,                       # keine Legende
+        ),
+        opacity=opacity_enc,
+        tooltip=[kat_feld, alt.Tooltip(f"{wert_feld}:Q", format=".2f")],
+    )
+
+    # Beschriftung mit Pfeil, aussen neben dem jeweiligen Segment
+    labels = base.mark_text(
+        radius=122, fontSize=12, fontWeight=600, fill=INK,
+    ).encode(text=alt.Text("_lbl:N"))
+
+    chart = (arc + labels).properties(height=320, background="transparent")
     if selection:
-        c = c.add_params(selection)
-    return c.configure_view(fill=None, stroke=None)
+        chart = chart.add_params(selection)
+    return chart.configure_view(fill=None, stroke=None)
+
+
+def torte_mit_drilldown(spalte, titel, gruppen_df, quelle_df, chart_v_schluessel, sel_name):
+    """Rendert in 'spalte' einen Donut + (bei Klick) Produkt-Drilldown."""
+    with spalte:
+        st.subheader(titel)
+        if gruppen_df.empty:
+            st.caption("Keine Daten in dieser Gruppe.")
+            return
+
+        sel        = alt.selection_point(fields=["Kategorie"], name=sel_name)
+        chart_key  = f"{sel_name}_{st.session_state[chart_v_schluessel]}"
+        event      = st.altair_chart(
+            torte(gruppen_df, "Kategorie", "Preis", selection=sel),
+            use_container_width=True,
+            on_select="rerun",
+            key=chart_key,
+        )
+
+        selected = None
+        try:
+            pts = event.selection.get(sel_name, [])
+            if pts:
+                selected = pts[0].get("Kategorie")
+        except Exception:
+            pass
+
+        if selected:
+            prod_df = (quelle_df[quelle_df["Kategorie"] == selected]
+                       .groupby("Produkt", as_index=False)["Preis"].sum())
+            titel_col, close_col = st.columns([6, 1])
+            with titel_col:
+                st.markdown(f"**↳ {selected}**")
+            with close_col:
+                if st.button("✕", key=f"close_{sel_name}", help="Drilldown schließen"):
+                    st.session_state[chart_v_schluessel] += 1
+                    st.rerun()
+            st.altair_chart(
+                torte(prod_df, "Produkt", "Preis"),
+                use_container_width=True,
+            )
 
 
 def glas_linie(data, x_feld, y_feld, farbe, tag_marker=None):
@@ -585,8 +631,10 @@ def glas_linie(data, x_feld, y_feld, farbe, tag_marker=None):
 # ==========================================================
 if "editor_v" not in st.session_state:      # Versionsnummer fuer den Daten-Editor
     st.session_state.editor_v = 0
-if "kat_chart_v" not in st.session_state:    # Versionsnummer fuer den Kategorie-Chart
-    st.session_state.kat_chart_v = 0
+if "fix_chart_v" not in st.session_state:    # Versionsnummer fuer den Fixkosten-Chart
+    st.session_state.fix_chart_v = 0
+if "var_chart_v" not in st.session_state:    # Versionsnummer fuer den Variable-Ausgaben-Chart
+    st.session_state.var_chart_v = 0
 
 # ==========================================================
 # 6. TITEL & FLASH-NACHRICHTEN
@@ -646,35 +694,44 @@ if df_db.empty:
             "Nutze das Formular oben, um Daten zu speichern!")
 else:
     # ---- Metriken berechnen --------------------------------------------
-    ist_einnahme    = df_db["Kategorie"].isin(EINNAHME_KAT)
-    einnahmen_sum   = df_db.loc[ist_einnahme,  "Preis"].sum()
-    ausgaben_sum    = df_db.loc[~ist_einnahme, "Preis"].sum()
-    aktueller_stand = startkontostand + einnahmen_sum - ausgaben_sum
+    ist_einnahme  = df_db["Kategorie"].isin(EINNAHME_KAT)
+    ist_fix       = df_db["Kategorie"].isin(FIXKOSTEN_KAT)
+    ist_variabel  = ~ist_einnahme & ~ist_fix     # alles ausser Einnahmen & Fixkosten
 
-    st.divider()
-    m1, m2 = st.columns(2)
-    netto_delta    = einnahmen_sum - ausgaben_sum
-    netto_ausgaben = ausgaben_sum - einnahmen_sum   # Einnahmen reduzieren die Ausgaben
+    einnahmen_sum = df_db.loc[ist_einnahme, "Preis"].sum()
+    fixkosten_sum = df_db.loc[ist_fix,      "Preis"].sum()
+    variabel_sum  = df_db.loc[ist_variabel, "Preis"].sum()
+
+    # Kontostand: Einnahmen rauf, ALLE Ausgaben (variabel + fix) runter
+    aktueller_stand = startkontostand + einnahmen_sum - variabel_sum - fixkosten_sum
+    netto_delta     = einnahmen_sum - variabel_sum - fixkosten_sum
+
+    # Gesamtausgaben = nur variable Ausgaben (Einnahmen mindern sie); Fixkosten separat
+    netto_ausgaben   = variabel_sum - einnahmen_sum
     tage_eingetragen = df_db["Datum"].dt.normalize().nunique()
     taeglicher_durchschnitt = (
         netto_ausgaben / tage_eingetragen if tage_eingetragen > 0 else 0.0
     )
+
+    st.divider()
+    # Gesamtausgaben oben, Fixkosten daneben (nebeneinander)
+    m1, m2, m3 = st.columns(3)
     with m1:
         st.metric("Aktueller Kontostand", f"{aktueller_stand:.2f} €",
                   delta=f"{netto_delta:+.2f} €")
     with m2:
         st.metric("Gesamtausgaben", f"{netto_ausgaben:.2f} €")
         st.metric("∅ täglich", f"{taeglicher_durchschnitt:.2f} €")
+    with m3:
+        st.metric("Fixkosten", f"{fixkosten_sum:.2f} €")
 
     st.divider()
 
     # Aufsteigend sortierte Kopie fuer die Diagramme
     df = df_db.sort_values("Datum").reset_index(drop=True)
 
-    # ---- Tabelle (editierbar) links | Kategorie-Chart rechts -----------
-    tab_col, chart_col = st.columns([1.15, 0.85])
-
-    with tab_col:
+    # ---- Tabelle (editierbar, volle Breite) ----------------------------
+    with st.container():
         st.subheader("Übersicht")
         # Nur die relevanten Spalten in fester Reihenfolge; id wird ausgeblendet,
         # bleibt aber fuer die Zuordnung Zeile -> Datenbank-id erhalten.
@@ -712,49 +769,21 @@ else:
             st.caption("Zellen bearbeiten, Zeilen per 🗑 löschen oder unten neu "
                        "anlegen – danach **Änderungen speichern**.")
 
-    # ---- Kategorie-Histogramm mit Drilldown ----------------------------
-    with chart_col:
-        st.subheader("Nach Kategorie")
-        if not df.empty:
-            kat_summe = df.groupby("Kategorie", as_index=False)["Preis"].sum()
-            kat_summe["Typ"] = kat_summe["Kategorie"].apply(
-                lambda k: "Einnahme" if k in EINNAHME_KAT else "Ausgabe"
-            )
-            kat_sel     = alt.selection_point(fields=["Kategorie"], name="kat_sel")
-            chart_key   = f"kat_chart_{st.session_state.kat_chart_v}"
-            chart_event = st.altair_chart(
-                kat_torte(kat_summe, selection=kat_sel),
-                use_container_width=True,
-                on_select="rerun",
-                key=chart_key,
-            )
+    # ---- Tortendiagramme: Fixkosten links | Variable Ausgaben rechts ----
+    st.divider()
+    fix_col, var_col = st.columns(2)
 
-            # Drilldown-Auswertung
-            selected_kat = None
-            try:
-                pts = chart_event.selection.get("kat_sel", [])
-                if pts:
-                    selected_kat = pts[0].get("Kategorie")
-            except Exception:
-                pass
+    # Fixkosten-Gruppe (Investment, Fixkosten, Miete)
+    fix_summe = (df[df["Kategorie"].isin(FIXKOSTEN_KAT)]
+                 .groupby("Kategorie", as_index=False)["Preis"].sum())
+    # Variable Ausgaben = alles ausser Einnahmen & Fixkosten
+    var_summe = (df[~df["Kategorie"].isin(EINNAHME_KAT) & ~df["Kategorie"].isin(FIXKOSTEN_KAT)]
+                 .groupby("Kategorie", as_index=False)["Preis"].sum())
 
-            if selected_kat:
-                prod_df     = (df[df["Kategorie"] == selected_kat]
-                               .groupby("Produkt", as_index=False)["Preis"].sum())
-                typ_label   = "Einnahme" if selected_kat in EINNAHME_KAT else "Ausgabe"
-
-                titel_col, close_col = st.columns([6, 1])
-                with titel_col:
-                    st.markdown(f"**↳ {selected_kat} ({typ_label})**")
-                with close_col:
-                    if st.button("✕", key="close_drill", help="Drilldown schließen"):
-                        st.session_state.kat_chart_v += 1
-                        st.rerun()
-
-                st.altair_chart(
-                    glas_torte(prod_df, "Produkt", "Preis"),
-                    use_container_width=True,
-                )
+    torte_mit_drilldown(fix_col, "Fixkosten", fix_summe, df,
+                        "fix_chart_v", "fix_sel")
+    torte_mit_drilldown(var_col, "Variable Ausgaben", var_summe, df,
+                        "var_chart_v", "var_sel")
 
     # ---- Kontostand-Verlauf --------------------------------------------
     if not df.empty:
