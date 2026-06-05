@@ -711,45 +711,48 @@ else:
     # Gesamtausgaben = Variable Ausgaben + Fixkosten
     gesamtausgaben = variable_netto + fixkosten_sum
     tage_eingetragen = df_db["Datum"].dt.normalize().nunique()
+    # Taeglicher Durchschnitt NUR aus den variablen Kosten
     taeglicher_durchschnitt = (
-        gesamtausgaben / tage_eingetragen if tage_eingetragen > 0 else 0.0
+        variable_netto / tage_eingetragen if tage_eingetragen > 0 else 0.0
     )
 
     st.divider()
-    k1, k2, k3 = st.columns(3)
-    with k1:
+    # Obere Reihe: Kontostand links, Gesamtausgaben-Block rechts
+    top_l, top_r = st.columns(2)
+    with top_l:
         st.metric("Aktueller Kontostand", f"{aktueller_stand:.2f} €",
                   delta=f"{netto_delta:+.2f} €")
+    with top_r:
+        st.markdown(f"""
+        <div style="background:var(--glass-strong);
+                    -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+                    border:1px solid var(--glass-border); border-radius:20px;
+                    padding:14px 30px; text-align:center; height:100%;
+                    box-shadow:0 8px 28px rgba(12,36,28,0.12), inset 0 1px 0 rgba(255,255,255,0.6);">
+          <div style="font-size:0.82rem; color:#22483b; letter-spacing:1.5px;">GESAMTAUSGABEN</div>
+          <div style="font-family:'Space Grotesk',sans-serif; font-weight:500;
+                      font-size:1.9rem; color:var(--accent);">{gesamtausgaben:.2f} €</div>
+          <div style="font-size:0.8rem; color:#22483b;">∅ täglich · {taeglicher_durchschnitt:.2f} €</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
     # Aufsteigend sortierte Kopie fuer die Diagramme
     df = df_db.sort_values("Datum").reset_index(drop=True)
 
-    # ---- Gesamtausgaben-Block + geschwungene Pfeile zu den Torten -------
+    # ---- Pfeil-Fächer: von oben nach unten in die beiden Torten ---------
     st.markdown(f"""
-    <div style="display:flex; justify-content:center;">
-      <div style="background:var(--glass-strong);
-                  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
-                  border:1px solid var(--glass-border); border-radius:20px;
-                  padding:14px 34px; text-align:center; min-width:250px;
-                  box-shadow:0 8px 28px rgba(12,36,28,0.12), inset 0 1px 0 rgba(255,255,255,0.6);">
-        <div style="font-size:0.82rem; color:#22483b; letter-spacing:1.5px;">GESAMTAUSGABEN</div>
-        <div style="font-family:'Orbitron',sans-serif; font-weight:800;
-                    font-size:1.95rem; color:var(--accent);">{gesamtausgaben:.2f} €</div>
-        <div style="font-size:0.8rem; color:#22483b;">∅ täglich · {taeglicher_durchschnitt:.2f} €</div>
-      </div>
-    </div>
-    <svg viewBox="0 0 600 80" width="100%" height="80"
-         preserveAspectRatio="xMidYMid meet" style="display:block; margin-top:2px;">
+    <svg viewBox="0 0 600 70" width="100%" height="70"
+         preserveAspectRatio="xMidYMid meet" style="display:block;">
       <defs>
         <marker id="pfeil" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
           <path d="M0,0 L8,4 L0,8 Z" fill="{ACCENT}"></path>
         </marker>
       </defs>
-      <path d="M300,4 C300,42 175,36 150,70" fill="none" stroke="{ACCENT}"
+      <path d="M300,4 C300,38 175,30 150,60" fill="none" stroke="{ACCENT}"
             stroke-width="3" marker-end="url(#pfeil)"></path>
-      <path d="M300,4 C300,42 425,36 450,70" fill="none" stroke="{ACCENT}"
+      <path d="M300,4 C300,38 425,30 450,60" fill="none" stroke="{ACCENT}"
             stroke-width="3" marker-end="url(#pfeil)"></path>
     </svg>
     """, unsafe_allow_html=True)
