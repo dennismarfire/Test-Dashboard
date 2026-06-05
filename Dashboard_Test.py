@@ -732,7 +732,6 @@ else:
           <div style="font-size:0.82rem; color:#22483b; letter-spacing:1.5px;">GESAMTAUSGABEN</div>
           <div style="font-family:'Space Grotesk',sans-serif; font-weight:500;
                       font-size:1.9rem; color:var(--accent);">{gesamtausgaben:.2f} €</div>
-          <div style="font-size:0.8rem; color:#22483b;">∅ täglich · {taeglicher_durchschnitt:.2f} €</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -741,7 +740,7 @@ else:
     # Aufsteigend sortierte Kopie fuer die Diagramme
     df = df_db.sort_values("Datum").reset_index(drop=True)
 
-    # ---- Pfeil-Fächer: von oben nach unten in die beiden Torten ---------
+    # ---- Pfeile: kommen aus dem Gesamtausgaben-Block (rechts) -----------
     st.markdown(f"""
     <svg viewBox="0 0 600 70" width="100%" height="70"
          preserveAspectRatio="xMidYMid meet" style="display:block;">
@@ -750,9 +749,9 @@ else:
           <path d="M0,0 L8,4 L0,8 Z" fill="{ACCENT}"></path>
         </marker>
       </defs>
-      <path d="M300,4 C300,38 175,30 150,60" fill="none" stroke="{ACCENT}"
+      <path d="M450,2 C450,34 180,26 150,60" fill="none" stroke="{ACCENT}"
             stroke-width="3" marker-end="url(#pfeil)"></path>
-      <path d="M300,4 C300,38 425,30 450,60" fill="none" stroke="{ACCENT}"
+      <path d="M450,2 C452,30 450,40 450,60" fill="none" stroke="{ACCENT}"
             stroke-width="3" marker-end="url(#pfeil)"></path>
     </svg>
     """, unsafe_allow_html=True)
@@ -771,6 +770,13 @@ else:
                         "fix_chart_v", "fix_sel")
     torte_mit_drilldown(var_col, f"Variable Ausgaben · {variable_netto:.2f} €", var_summe, df,
                         "var_chart_v", "var_sel")
+    # Durchschnittliche tägliche (variable) Kosten unter der Variable-Torte
+    with var_col:
+        st.markdown(
+            f"<div style='text-align:center; color:#22483b; font-size:0.92rem;'>"
+            f"∅ täglich · {taeglicher_durchschnitt:.2f} €</div>",
+            unsafe_allow_html=True,
+        )
 
     # ---- Tabelle (editierbar, unter den Diagrammen) --------------------
     st.divider()
