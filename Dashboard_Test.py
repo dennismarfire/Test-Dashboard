@@ -706,31 +706,71 @@ else:
     aktueller_stand = startkontostand + einnahmen_sum - variabel_sum - fixkosten_sum
     netto_delta     = einnahmen_sum - variabel_sum - fixkosten_sum
 
-    # Gesamtausgaben = nur variable Ausgaben (Einnahmen mindern sie); Fixkosten separat
-    netto_ausgaben   = variabel_sum - einnahmen_sum
+    # Variable Ausgaben (netto, Einnahmen mindern sie)
+    variable_netto = variabel_sum - einnahmen_sum
+    # Gesamtausgaben = Variable Ausgaben + Fixkosten
+    gesamtausgaben = variable_netto + fixkosten_sum
     tage_eingetragen = df_db["Datum"].dt.normalize().nunique()
     taeglicher_durchschnitt = (
-        netto_ausgaben / tage_eingetragen if tage_eingetragen > 0 else 0.0
+        gesamtausgaben / tage_eingetragen if tage_eingetragen > 0 else 0.0
     )
 
     st.divider()
-    # Gesamtausgaben oben, Fixkosten daneben (nebeneinander)
-    m1, m2, m3 = st.columns(3)
-    with m1:
+    k1, k2, k3 = st.columns(3)
+    with k1:
         st.metric("Aktueller Kontostand", f"{aktueller_stand:.2f} €",
                   delta=f"{netto_delta:+.2f} €")
-    with m2:
-        st.metric("Gesamtausgaben", f"{netto_ausgaben:.2f} €")
-        st.metric("∅ täglich", f"{taeglicher_durchschnitt:.2f} €")
-    with m3:
-        st.metric("Fixkosten", f"{fixkosten_sum:.2f} €")
 
     st.divider()
 
     # Aufsteigend sortierte Kopie fuer die Diagramme
     df = df_db.sort_values("Datum").reset_index(drop=True)
 
-    # ---- Tabelle (editierbar, volle Breite) ----------------------------
+    # ---- Gesamtausgaben-Block + geschwungene Pfeile zu den Torten -------
+    st.markdown(f"""
+    <div style="display:flex; justify-content:center;">
+      <div style="background:var(--glass-strong);
+                  -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+                  border:1px solid var(--glass-border); border-radius:20px;
+                  padding:14px 34px; text-align:center; min-width:250px;
+                  box-shadow:0 8px 28px rgba(12,36,28,0.12), inset 0 1px 0 rgba(255,255,255,0.6);">
+        <div style="font-size:0.82rem; color:#22483b; letter-spacing:1.5px;">GESAMTAUSGABEN</div>
+        <div style="font-family:'Orbitron',sans-serif; font-weight:800;
+                    font-size:1.95rem; color:var(--accent);">{gesamtausgaben:.2f} €</div>
+        <div style="font-size:0.8rem; color:#22483b;">∅ täglich · {taeglicher_durchschnitt:.2f} €</div>
+      </div>
+    </div>
+    <svg viewBox="0 0 600 80" width="100%" height="80"
+         preserveAspectRatio="xMidYMid meet" style="display:block; margin-top:2px;">
+      <defs>
+        <marker id="pfeil" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="{ACCENT}"></path>
+        </marker>
+      </defs>
+      <path d="M300,4 C300,42 175,36 150,70" fill="none" stroke="{ACCENT}"
+            stroke-width="3" marker-end="url(#pfeil)"></path>
+      <path d="M300,4 C300,42 425,36 450,70" fill="none" stroke="{ACCENT}"
+            stroke-width="3" marker-end="url(#pfeil)"></path>
+    </svg>
+    """, unsafe_allow_html=True)
+
+    # ---- Tortendiagramme: Fixkosten links | Variable Ausgaben rechts ----
+    fix_col, var_col = st.columns(2)
+
+    # Fixkosten-Gruppe (Investment, Fixkosten, Miete)
+    fix_summe = (df[df["Kategorie"].isin(FIXKOSTEN_KAT)]
+                 .groupby("Kategorie", as_index=False)["Preis"].sum())
+    # Variable Ausgaben = alles ausser Einnahmen & Fixkosten
+    var_summe = (df[~df["Kategorie"].isin(EINNAHME_KAT) & ~df["Kategorie"].isin(FIXKOSTEN_KAT)]
+                 .groupby("Kategorie", as_index=False)["Preis"].sum())
+
+    torte_mit_drilldown(fix_col, f"Fixkosten · {fixkosten_sum:.2f} €", fix_summe, df,
+                        "fix_chart_v", "fix_sel")
+    torte_mit_drilldown(var_col, f"Variable Ausgaben · {variable_netto:.2f} €", var_summe, df,
+                        "var_chart_v", "var_sel")
+
+    # ---- Tabelle (editierbar, unter den Diagrammen) --------------------
+    st.divider()
     with st.container():
         st.subheader("Übersicht")
         # Nur die relevanten Spalten in fester Reihenfolge; id wird ausgeblendet,
@@ -768,22 +808,6 @@ else:
         with col_hint:
             st.caption("Zellen bearbeiten, Zeilen per 🗑 löschen oder unten neu "
                        "anlegen – danach **Änderungen speichern**.")
-
-    # ---- Tortendiagramme: Fixkosten links | Variable Ausgaben rechts ----
-    st.divider()
-    fix_col, var_col = st.columns(2)
-
-    # Fixkosten-Gruppe (Investment, Fixkosten, Miete)
-    fix_summe = (df[df["Kategorie"].isin(FIXKOSTEN_KAT)]
-                 .groupby("Kategorie", as_index=False)["Preis"].sum())
-    # Variable Ausgaben = alles ausser Einnahmen & Fixkosten
-    var_summe = (df[~df["Kategorie"].isin(EINNAHME_KAT) & ~df["Kategorie"].isin(FIXKOSTEN_KAT)]
-                 .groupby("Kategorie", as_index=False)["Preis"].sum())
-
-    torte_mit_drilldown(fix_col, "Fixkosten", fix_summe, df,
-                        "fix_chart_v", "fix_sel")
-    torte_mit_drilldown(var_col, "Variable Ausgaben", var_summe, df,
-                        "var_chart_v", "var_sel")
 
     # ---- Kontostand-Verlauf --------------------------------------------
     if not df.empty:
