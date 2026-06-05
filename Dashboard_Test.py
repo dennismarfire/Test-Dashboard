@@ -14,8 +14,8 @@ st.set_page_config(page_title="Kostenanalyse", page_icon="💰", layout="wide")
 INK     = "#0c241c"
 ACCENT  = "#0b6b4f"
 ACCENT2 = "#0a4f8c"
-EINNAHME_KAT = {"Gehalt"}   # Diese Kategorien werden addiert, nicht subtrahiert
-KATEGORIEN = ["Keine", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Gehalt", "Mittagessen"]
+EINNAHME_KAT = {"Gehalt","Rückzahlung"}   # Diese Kategorien werden addiert, nicht subtrahiert
+KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Gehalt", "Mittagessen"]
 
 # ---- Spalten-Mapping: Datenbank <-> App/Anzeige --------------------------
 # DB-Spalte (englisch/klein)  ->  Anzeige-Spalte (deutsch, wie im alten Code)
