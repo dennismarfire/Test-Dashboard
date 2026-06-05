@@ -15,7 +15,7 @@ INK     = "#0c241c"
 ACCENT  = "#0b6b4f"
 ACCENT2 = "#0a4f8c"
 EINNAHME_KAT = {"Gehalt","Rückzahlung"}   # Diese Kategorien werden addiert, nicht subtrahiert
-KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Gehalt", "Mittagessen"]
+KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Mittagessen","Freizeit","Gehalt", "Rückzahlung"]
 
 # ---- Spalten-Mapping: Datenbank <-> App/Anzeige --------------------------
 # DB-Spalte (englisch/klein)  ->  Anzeige-Spalte (deutsch, wie im alten Code)
