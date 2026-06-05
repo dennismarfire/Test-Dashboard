@@ -16,6 +16,10 @@ ACCENT  = "#0b6b4f"
 ACCENT2 = "#0a4f8c"
 EINNAHME_KAT = {"Gehalt","Rückzahlung"}   # Diese Kategorien werden addiert, nicht subtrahiert
 KATEGORIEN = ["", "Feiern", "Einkauf", "Produktivität", "Fixkosten", "Investment", "Mittagessen","Freizeit","Gehalt", "Rückzahlung"]
+TORTE_FARBEN = [
+    "#2ecc71", "#3498db", "#9b59b6", "#f39c12", "#e74c3c",
+    "#1abc9c", "#e67e22", "#34495e", "#27ae60", "#2980b9",
+]
 
 # ---- Spalten-Mapping: Datenbank <-> App/Anzeige --------------------------
 # DB-Spalte (englisch/klein)  ->  Anzeige-Spalte (deutsch, wie im alten Code)
@@ -134,6 +138,18 @@ def lade_einstellung(schluessel: str, standard: float) -> float:
     if df.empty:
         return standard
     return float(df.iloc[0]["wert"])
+
+
+def lade_einstellung_text(schluessel: str, standard: str = "") -> str:
+    """Liest einen Text-Einstellungswert aus der DB (kein Cache)."""
+    df = conn.query(
+        "SELECT wert FROM einstellungen WHERE schluessel = :key;",
+        params={"key": schluessel},
+        ttl=0,
+    )
+    if df.empty:
+        return standard
+    return str(df.iloc[0]["wert"])
 
 
 def speichere_einstellung(schluessel: str, wert: float):
@@ -461,43 +477,49 @@ def _ax(grid=False, fmt=None, angle=0, tick_count=None):
     return alt.Axis(**kw)
 
 
-def glas_balken(data, x_feld, y_feld, farbe, selection=None):
-    opacity_enc = (
-        alt.condition(selection, alt.value(1.0), alt.value(0.35))
-        if selection else alt.value(1.0)
-    )
+def _torte_farben(n):
+    """Gibt n glässige Farben aus TORTE_FARBEN (zyklisch) zurück."""
+    return (TORTE_FARBEN * ((n // len(TORTE_FARBEN)) + 1))[:n]
+
+
+def glas_torte(data, x_feld, y_feld):
+    """Produkt-Tortendiagramm mit glässigen Farben."""
+    n = max(len(data), 1)
     c = (
         alt.Chart(data)
-        .mark_bar(color=farbe, cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
+        .mark_arc(innerRadius=45, opacity=0.80, stroke="rgba(255,255,255,0.75)", strokeWidth=2)
         .encode(
-            x=alt.X(f"{x_feld}:N", axis=_ax(angle=0), sort="-y"),
-            y=alt.Y(f"{y_feld}:Q", axis=_ax(grid=True)),
-            opacity=opacity_enc,
+            theta=alt.Theta(f"{y_feld}:Q", stack=True),
+            color=alt.Color(
+                f"{x_feld}:N",
+                scale=alt.Scale(range=_torte_farben(n)),
+                legend=alt.Legend(title="", labelColor=INK, labelFontSize=11, orient="right"),
+            ),
             tooltip=[x_feld, alt.Tooltip(f"{y_feld}:Q", format=".2f")],
         )
-        .properties(height=280, background="transparent")
+        .properties(height=260, background="transparent")
     )
-    if selection:
-        c = c.add_params(selection)
     return c.configure_view(fill=None, stroke=None)
 
 
-def kat_balken(data, selection=None):
-    """Kategorie-Chart mit Farb-Codierung Einnahme/Ausgabe + optionaler Selektion."""
-    farb_skala = alt.Scale(domain=["Ausgabe", "Einnahme"], range=[ACCENT2, ACCENT])
+def kat_torte(data, selection=None):
+    """Kategorie-Tortendiagramm mit glässigen Farben + optionaler Selektion."""
+    kategorien = list(data["Kategorie"].values)
+    n = max(len(kategorien), 1)
     opacity_enc = (
-        alt.condition(selection, alt.value(1.0), alt.value(0.35))
-        if selection else alt.value(1.0)
+        alt.condition(selection, alt.value(1.0), alt.value(0.40))
+        if selection else alt.value(0.82)
     )
     c = (
         alt.Chart(data)
-        .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
+        .mark_arc(innerRadius=55, stroke="rgba(255,255,255,0.75)", strokeWidth=2)
         .encode(
-            x=alt.X("Kategorie:N", axis=_ax(angle=0), sort="-y"),
-            y=alt.Y("Preis:Q", axis=_ax(grid=True)),
-            color=alt.Color("Typ:N", scale=farb_skala,
-                            legend=alt.Legend(title="", labelColor=INK,
-                                              orient="top", labelFontSize=12)),
+            theta=alt.Theta("Preis:Q", stack=True),
+            color=alt.Color(
+                "Kategorie:N",
+                scale=alt.Scale(domain=kategorien, range=_torte_farben(n)),
+                legend=alt.Legend(title="", labelColor=INK, labelFontSize=11, orient="right"),
+            ),
             opacity=opacity_enc,
             tooltip=["Kategorie", alt.Tooltip("Preis:Q", format=".2f"), "Typ"],
         )
@@ -631,12 +653,18 @@ else:
 
     st.divider()
     m1, m2 = st.columns(2)
-    netto_delta = einnahmen_sum - ausgaben_sum
+    netto_delta    = einnahmen_sum - ausgaben_sum
+    netto_ausgaben = ausgaben_sum - einnahmen_sum   # Einnahmen reduzieren die Ausgaben
+    tage_eingetragen = df_db["Datum"].dt.normalize().nunique()
+    taeglicher_durchschnitt = (
+        netto_ausgaben / tage_eingetragen if tage_eingetragen > 0 else 0.0
+    )
     with m1:
         st.metric("Aktueller Kontostand", f"{aktueller_stand:.2f} €",
                   delta=f"{netto_delta:+.2f} €")
     with m2:
-        st.metric("Gesamtausgaben", f"{ausgaben_sum:.2f} €")
+        st.metric("Gesamtausgaben", f"{netto_ausgaben:.2f} €")
+        st.metric("∅ täglich", f"{taeglicher_durchschnitt:.2f} €")
 
     st.divider()
 
@@ -695,7 +723,7 @@ else:
             kat_sel     = alt.selection_point(fields=["Kategorie"], name="kat_sel")
             chart_key   = f"kat_chart_{st.session_state.kat_chart_v}"
             chart_event = st.altair_chart(
-                kat_balken(kat_summe, selection=kat_sel),
+                kat_torte(kat_summe, selection=kat_sel),
                 use_container_width=True,
                 on_select="rerun",
                 key=chart_key,
@@ -714,7 +742,6 @@ else:
                 prod_df     = (df[df["Kategorie"] == selected_kat]
                                .groupby("Produkt", as_index=False)["Preis"].sum())
                 typ_label   = "Einnahme" if selected_kat in EINNAHME_KAT else "Ausgabe"
-                drill_farbe = ACCENT if selected_kat in EINNAHME_KAT else ACCENT2
 
                 titel_col, close_col = st.columns([6, 1])
                 with titel_col:
@@ -725,7 +752,7 @@ else:
                         st.rerun()
 
                 st.altair_chart(
-                    glas_balken(prod_df, "Produkt", "Preis", drill_farbe),
+                    glas_torte(prod_df, "Produkt", "Preis"),
                     use_container_width=True,
                 )
 
@@ -762,5 +789,24 @@ else:
         chart = glas_linie(verlauf, "Datum", "Kontostand", ACCENT2, tag_marker=tag)
         if chart:
             st.altair_chart(chart, use_container_width=True)
+
+# ==========================================================
+# 10. VERBESSERUNGSVORSCHLÄGE
+# ==========================================================
+st.divider()
+st.subheader("Verbesserungsvorschläge")
+st.caption("Schreib hier deine Ideen und Wünsche für die Webseite auf – sie werden gespeichert.")
+
+verbesserungen_geladen = lade_einstellung_text("verbesserungen", "")
+verbesserungen_text = st.text_area(
+    label="Deine Vorschläge:",
+    value=verbesserungen_geladen,
+    height=180,
+    placeholder="z. B. Neue Kategorie hinzufügen, Diagramm anpassen, ...",
+    label_visibility="collapsed",
+)
+if st.button("💾 Vorschläge speichern", key="save_verbesserungen"):
+    speichere_einstellung("verbesserungen", verbesserungen_text)
+    st.success("Vorschläge wurden gespeichert!")
 
 # streamlit run "C:\Users\Oliver Dennis\PycharmProjects\PythonProject\Test-Dashboard\Dashboard_Test.py"
